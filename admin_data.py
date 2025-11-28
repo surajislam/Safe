@@ -1,5 +1,6 @@
 import json
 import os
+import fcntl
 import threading
 import time
 import random
@@ -7,28 +8,22 @@ import string
 from datetime import datetime
 
 class AdminDataManager:
-    """
-    Handles user, username, UTR, and custom message data management.
-    Uses JSON file storage with threading locks and atomic writes (os.replace) 
-    to ensure data integrity across multiple threads in any operating system.
-    """
     def __init__(self):
         self.data_file = 'admin_database.json'
-        # Lock for thread safety within a single Python process
-        self._lock = threading.Lock() 
-        self.data = {}
+        self._lock = threading.Lock()
+        self.data = {} # Initialize data attribute
         self.init_database()
 
     def generate_hash_code(self):
-        """Generate a unique 12-character alphanumeric hash code"""
+        """Generate a unique 12-digit alphanumeric hash code"""
         characters = string.ascii_uppercase + string.digits
         return ''.join(random.choices(characters, k=12))
 
     def init_database(self):
-        """Initialize database with default demo data if file does not exist"""
-        
+        """Initialize database with default demo data"""
         if not os.path.exists(self.data_file):
-            admin_hash = "ADMIN9999RSX"
+            # Generate your admin hash code with ₹9999 balance
+            admin_hash = "ADMIN9999RSX"  # Your requested admin code
 
             default_data = {
                 "users": [
@@ -71,6 +66,30 @@ class AdminDataManager:
                         },
                         "active": True,
                         "created_at": datetime.now().isoformat()
+                    },
+                    {
+                        "id": 2,
+                        "username": "sr_cheat_hack",
+                        "mobile_number": "7970421286",
+                        "mobile_details": {
+                            "full_name": "👤 Hari Prasan Ram",
+                            "father_name": "👨 Shiv Kumar Ram",
+                            "document_number": "🃏 661024605582",
+                            "region": "🗺️ BIHAR JIO;AIRTEL BHR&JHR;JIO BHR&JHR",
+                            "addresses": [
+                                "🏘️ 22 village bisi kalan dinara district rohtas,Nawanagar PO,buxar,post office-bisi kalan Nawanagar,Nawanagar,Bhojpur,Buxar,Bihar,802129",
+                                "🏘️ S/O Hari Prasan Ram,village-bisi kalan village-bisi kalandinara district-rohtas Nawanagar,NA,post office-bisi kalan,Nawanagar Nawanagar Buxar,NA,Bihar,802129"
+                            ],
+                            "phone_numbers": [
+                                "📞 918607096821",
+                                "📞 919113198403",
+                                "📞 919693442577",
+                                "📞 917497099699",
+                                "📞 917970421286"
+                            ]
+                        },
+                        "active": True,
+                        "created_at": datetime.now().isoformat()
                     }
                 ],
                 "valid_utrs": [
@@ -82,48 +101,62 @@ class AdminDataManager:
                         "created_at": datetime.now().isoformat()
                     }
                 ],
-                "custom_message": "No details available in the database, but we are working on it. Your search has been logged." 
+                "custom_message": "You have just added balance, please wait for 2 minutes for search" # Initialize custom message
             }
 
             self.save_data(default_data)
-            print(f"--- Admin Hash Code ---")
-            print(f"Hash: {admin_hash} (Use this to login with ₹9999 balance)")
-            print(f"-----------------------")
+            print(f"Admin hash code with ₹9999 balance: {admin_hash}")
         else:
-            # Load existing data and ensure all required keys are present
+            # Ensure existing database has all required keys
             data = self.load_data()
             updated = False
 
-            if 'users' not in data: data['users'] = []
-            if 'demo_usernames' not in data: data['demo_usernames'] = []
-            if 'valid_utrs' not in data: data['valid_utrs'] = []
-            if 'custom_message' not in data:
-                data['custom_message'] = "No details available in the database, but we are working on it. Your search has been logged."
+            if 'users' not in data:
+                data['users'] = []
                 updated = True
-            
+
+            if 'demo_usernames' not in data:
+                data['demo_usernames'] = []
+                updated = True
+
+            if 'valid_utrs' not in data:
+                data['valid_utrs'] = []
+                updated = True
+
+            if 'custom_message' not in data: # Ensure custom_message key exists
+                data['custom_message'] = "You have just added balance, please wait for 2 minutes for search"
+                updated = True
+
             if updated:
                 self.save_data(data)
 
     def load_data(self):
-        """Load data from JSON file using threading lock and retry mechanism"""
+        """Load data from JSON file with file locking"""
         max_retries = 5
         retry_delay = 0.1
 
         for attempt in range(max_retries):
             try:
-                # Use threading lock to prevent read/write conflicts
                 with self._lock:
                     with open(self.data_file, 'r') as f:
-                        self.data = json.load(f)
-                        # Ensure all required keys exist
-                        if 'users' not in self.data: self.data['users'] = []
-                        if 'demo_usernames' not in self.data: self.data['demo_usernames'] = []
-                        if 'valid_utrs' not in self.data: self.data['valid_utrs'] = []
-                        if 'custom_message' not in self.data: 
-                            self.data['custom_message'] = "No details available in the database, but we are working on it. Your search has been logged."
-                        return self.data
+                        # Acquire shared lock
+                        fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                        try:
+                            self.data = json.load(f) # Load into self.data
+                            # Ensure all required keys exist
+                            if 'users' not in self.data:
+                                self.data['users'] = []
+                            if 'demo_usernames' not in self.data:
+                                self.data['demo_usernames'] = []
+                            if 'valid_utrs' not in self.data:
+                                self.data['valid_utrs'] = []
+                            if 'custom_message' not in self.data: # Ensure custom_message key exists
+                                self.data['custom_message'] = "You have just added balance, please wait for 2 minutes for search"
+                            return self.data
+                        finally:
+                            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             except (FileNotFoundError, json.JSONDecodeError):
-                if attempt == 0:
+                if attempt == 0:  # Only initialize on first attempt
                     self.init_database()
                     continue
                 raise
@@ -135,33 +168,43 @@ class AdminDataManager:
 
         raise Exception("Failed to load data after maximum retries")
 
-    def save_data(self, data=None):
-        """Save data to JSON file with threading lock and atomic writes (using temp file)"""
+    def save_data(self, data=None): # Accept optional data argument
+        """Save data to JSON file with file locking and atomic writes"""
         max_retries = 5
         retry_delay = 0.1
         temp_file = self.data_file + '.tmp'
 
-        data_to_save = data if data is not None else self.data
-        if data is not None:
-             self.data = data 
+        # If data is not provided, use self.data
+        if data is None:
+            data_to_save = self.data
+        else:
+            data_to_save = data
+            self.data = data # Update self.data if new data is provided
 
         for attempt in range(max_retries):
             try:
                 with self._lock:
-                    # 1. Write to temporary file first
+                    # Write to temporary file first
                     with open(temp_file, 'w') as f:
-                        json.dump(data_to_save, f, indent=2)
-                        f.flush()
-                        os.fsync(f.fileno()) # Ensure data is written to disk
+                        # Acquire exclusive lock
+                        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                        try:
+                            json.dump(data_to_save, f, indent=2)
+                            f.flush()
+                            os.fsync(f.fileno())  # Ensure data is written to disk
+                        finally:
+                            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
-                    # 2. Atomic move to replace original file (cross-platform way to ensure integrity)
+                    # Atomic move to replace original file
                     os.replace(temp_file, self.data_file)
                     return
             except (OSError, IOError) as e:
-                # Clean up temp file if error occurred
+                # Clean up temp file if it exists
                 if os.path.exists(temp_file):
-                    try: os.remove(temp_file)
-                    except: pass
+                    try:
+                        os.remove(temp_file)
+                    except:
+                        pass
 
                 if attempt < max_retries - 1:
                     time.sleep(retry_delay * (attempt + 1))
@@ -170,9 +213,9 @@ class AdminDataManager:
 
         raise Exception("Failed to save data after maximum retries")
 
-    # === User Management (The rest of the class remains the same) ===
+    # User Management (Hash Code System)
     def create_user(self, name):
-        """Create a new user with hash code and default balance (0)"""
+        """Create a new user with hash code"""
         data = self.load_data()
 
         # Generate unique hash code
@@ -223,21 +266,27 @@ class AdminDataManager:
         data['users'] = [user for user in data['users'] if user['id'] != int(user_id)]
         self.save_data(data)
 
-    # === Demo Usernames CRUD ===
+    # Demo Usernames CRUD (Updated Structure)
     def get_usernames(self):
         data = self.load_data()
         return data['demo_usernames']
 
     def add_username(self, username, mobile_number, mobile_details):
-        """Add a new searchable demo username"""
         data = self.load_data()
         new_id = max([item['id'] for item in data['demo_usernames']], default=0) + 1
+
+        # Clean mobile details - admin panel में जो enter करें वही show ho
+        if isinstance(mobile_details, str):
+            # Simply store the clean string as entered by admin
+            clean_details = mobile_details.strip()
+        else:
+            clean_details = mobile_details
 
         new_username = {
             "id": new_id,
             "username": username,
             "mobile_number": mobile_number,
-            "mobile_details": mobile_details,
+            "mobile_details": clean_details,  # Direct storage, no extra formatting
             "active": True,
             "created_at": datetime.now().isoformat()
         }
@@ -246,30 +295,33 @@ class AdminDataManager:
         return new_username
 
     def update_username(self, username_id, username, mobile_number, mobile_details):
-        """Update an existing searchable demo username"""
         data = self.load_data()
         for item in data['demo_usernames']:
             if item['id'] == int(username_id):
                 item['username'] = username
                 item['mobile_number'] = mobile_number
-                item['mobile_details'] = mobile_details
+
+                # Store exactly what admin enters, no extra formatting
+                if isinstance(mobile_details, str):
+                    clean_details = mobile_details.strip()
+                else:
+                    clean_details = mobile_details
+
+                item['mobile_details'] = clean_details
                 break
         self.save_data(data)
 
     def delete_username(self, username_id):
-        """Delete a searchable demo username"""
         data = self.load_data()
         data['demo_usernames'] = [item for item in data['demo_usernames'] if item['id'] != int(username_id)]
         self.save_data(data)
 
-    # === UTR CRUD ===
+    # UTR CRUD (Keep existing)
     def get_utrs(self):
-        """Get all valid UTRs"""
         data = self.load_data()
         return data['valid_utrs']
 
     def add_utr(self, utr, description):
-        """Add a new valid UTR"""
         data = self.load_data()
         new_id = max([item['id'] for item in data['valid_utrs']], default=0) + 1
         new_utr = {
@@ -284,31 +336,33 @@ class AdminDataManager:
         return new_utr
 
     def delete_utr(self, utr_id):
-        """Delete a valid UTR"""
         data = self.load_data()
         data['valid_utrs'] = [item for item in data['valid_utrs'] if item['id'] != int(utr_id)]
         self.save_data(data)
 
-    # === Statistics and Messages ===
     def get_statistics(self):
         """Get database statistics"""
-        self.load_data()
+        self.load_data() # Ensure data is loaded
         return {
             'users': len(self.data.get('users', [])),
             'usernames': len(self.data.get('demo_usernames', [])),
             'utrs': len(self.data.get('valid_utrs', []))
         }
 
+    # Custom Message Management
     def get_custom_message(self):
-        """Get custom 'not found' message to display to users"""
-        self.load_data()
-        return self.data.get('custom_message', "No details available in the database, but we are working on it. Your search has been logged.")
+        """Get custom not found message"""
+        self.load_data() # Ensure data is loaded
+        if 'custom_message' not in self.data:
+            self.data['custom_message'] = "You have just added balance, please wait for 2 minutes for search"
+            self.save_data() # Save if it was missing
+        return self.data['custom_message']
 
     def update_custom_message(self, message):
-        """Update custom 'not found' message"""
-        self.load_data()
+        """Update custom not found message"""
+        self.load_data() # Ensure data is loaded
         self.data['custom_message'] = message.strip()
-        self.save_data()
+        self.save_data() # Save the updated message
         return True
 
 # Global instance
