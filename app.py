@@ -14,7 +14,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from admin_data import admin_db
 from searched_usernames import searched_username_manager
 
-from config import TELEGRAM_BOT_TOKEN
 
 
 app = Flask(__name__)
