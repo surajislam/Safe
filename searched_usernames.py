@@ -1,84 +1,109 @@
 import json
 import os
-import fcntl
 import threading
 from datetime import datetime
+import time
 
 class SearchedUsernameManager:
+    """
+    Manages the list of usernames searched by users that were not found.
+    Uses JSON file storage with threading locks and atomic writes for safety.
+    """
     def __init__(self):
         self.data_file = 'searched_usernames.json'
         self._lock = threading.Lock()
         self.init_database()
 
     def init_database(self):
-        """Initialize database for searched usernames"""
+        """
+        Initialize database with empty list if file does not exist.
+        Includes error logging for deployment debugging.
+        """
         if not os.path.exists(self.data_file):
-            default_data = {
-                "searched_usernames": []
-            }
-            self.save_data(default_data)
+            default_data = {"searched_logs": []}
+            print(f"INFO: Initializing new database file: {self.data_file}")
+            try:
+                self._save_data(default_data)
+            except Exception as e:
+                # Log the critical error during initial file creation/write access
+                print(f"CRITICAL ERROR: Failed to create or write to the database file '{self.data_file}'. "
+                      f"This is often a permission or file system issue in the deployment environment. Details: {e}")
+                # Re-raise the exception to stop the service and show the error in the console
+                raise
 
-    def load_data(self):
-        """Load data from JSON file with file locking"""
-        try:
-            with self._lock:
-                with open(self.data_file, 'r') as f:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_SH)
-                    try:
+    def _load_data(self):
+        """Internal helper to load data with threading lock"""
+        max_retries = 5
+        retry_delay = 0.1
+
+        for attempt in range(max_retries):
+            try:
+                with self._lock:
+                    with open(self.data_file, 'r') as f:
                         data = json.load(f)
-                        if 'searched_usernames' not in data:
-                            data['searched_usernames'] = []
+                        if 'searched_logs' not in data:
+                            data['searched_logs'] = []
                         return data
-                    finally:
-                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-        except (FileNotFoundError, json.JSONDecodeError):
-            self.init_database()
-            return {"searched_usernames": []}
+            except (FileNotFoundError, json.JSONDecodeError):
+                if attempt == 0:
+                    self.init_database()
+                    continue
+                raise
+            except (OSError, IOError) as e:
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay * (attempt + 1))
+                    continue
+                # Log error before raising after max retries
+                print(f"ERROR: Failed to load data from {self.data_file} after retries: {e}")
+                raise
+        raise Exception("Failed to load searched usernames after maximum retries")
 
-    def save_data(self, data):
-        """Save data to JSON file"""
-        with self._lock:
-            with open(self.data_file, 'w') as f:
-                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-                try:
-                    json.dump(data, f, indent=2)
-                finally:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    def _save_data(self, data):
+        """Internal helper to save data with threading lock and atomic writes"""
+        max_retries = 5
+        retry_delay = 0.1
+        temp_file = self.data_file + '.tmp'
+
+        for attempt in range(max_retries):
+            try:
+                with self._lock:
+                    # 1. Write to temporary file
+                    with open(temp_file, 'w') as f:
+                        json.dump(data, f, indent=2)
+                        f.flush()
+                        os.fsync(f.fileno())
+
+                    # 2. Atomic move to replace original file
+                    os.replace(temp_file, self.data_file)
+                    return
+            except (OSError, IOError) as e:
+                if os.path.exists(temp_file):
+                    try: os.remove(temp_file)
+                    except: pass
+                
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay * (attempt + 1))
+                    continue
+                # Log error before raising after max retries
+                print(f"ERROR: Failed to save data to {self.data_file} after retries: {e}")
+                raise
+        raise Exception("Failed to save searched usernames after maximum retries")
 
     def add_searched_username(self, username, user_hash):
-        """Add username jo search hua but result nahi mila"""
-        data = self.load_data()
-
-        # Check if username already exists
-        for item in data['searched_usernames']:
-            if item['username'].lower() == username.lower():
-                return  # Already exists, don't add duplicate
-
-        new_entry = {
-            "id": len(data['searched_usernames']) + 1,
-            "username": username,
-            "searched_by": user_hash,
-            "searched_at": datetime.now().isoformat(),
-            "status": "not_found"
+        """Add a non-found username to the log"""
+        data = self._load_data()
+        new_log = {
+            "username": username.strip(),
+            "user_hash": user_hash,
+            "timestamp": datetime.now().isoformat()
         }
+        data['searched_logs'].append(new_log)
+        self._save_data(data)
 
-        data['searched_usernames'].append(new_entry)
-        self.save_data(data)
-
-    def get_searched_usernames(self):
-        """Get all searched usernames"""
-        data = self.load_data()
-        # Add mobile_number field for display consistency
-        for username in data['searched_usernames']:
-            if 'mobile_number' not in username:
-                username['mobile_number'] = 'Not Available'
-        return data['searched_usernames']
-
-    def delete_searched_username(self, username_id):
-        """Delete searched username by ID"""
-        data = self.load_data()
-        data['searched_usernames'] = [item for item in data['searched_usernames'] if item['id'] != username_id]
-        self.save_data(data)
+    def get_all_searched_usernames(self):
+        """Retrieve all logged searched usernames"""
+        data = self._load_data()
+        return data['searched_logs']
 
 # Global instance
 searched_username_manager = SearchedUsernameManager()
