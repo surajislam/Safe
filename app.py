@@ -12,7 +12,7 @@ from flask_cors import CORS
 from flask_wtf.csrf import CSRFProtect, validate_csrf
 from werkzeug.security import generate_password_hash, check_password_hash
 # Assuming these modules exist and handle data storage (admin_db, searched_username_manager)
-from admin_data import admin_db
+from admin_data import admin_database
 from searched_usernames import searched_username_manager 
 
 
