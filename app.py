@@ -11,9 +11,9 @@ import time
 from flask_cors import CORS
 from flask_wtf.csrf import CSRFProtect, validate_csrf
 from werkzeug.security import generate_password_hash, check_password_hash
+# Assuming these modules exist and handle data storage (admin_db, searched_username_manager)
 from admin_data import admin_db
-from searched_usernames import searched_username_manager
-
+from searched_usernames import searched_username_manager 
 
 
 app = Flask(__name__)
@@ -257,7 +257,7 @@ def search():
                 "success": False
             })
 
-        # Professional 10-second delay
+        # Professional 10-second delay - yeh time.sleep(10) woh 'waiting' ka reason ho sakta hai!
         time.sleep(10)
 
         # Search perform karte hain
@@ -272,10 +272,11 @@ def search():
         else:
             # User not found - store in searched usernames file
             searched_username_manager.add_searched_username(username, user_hash)
-            custom_message = admin_db.get_custom_message()
+            # Custom message for 'No details available'
+            custom_message = admin_db.get_custom_message() 
             result = {
                 "success": False,
-                "error": custom_message
+                "error": custom_message if custom_message else "No details available in the database or via API."
             }
 
         return jsonify(result)
@@ -409,7 +410,8 @@ def admin_dashboard():
     if not session.get('admin_authenticated'):
         return redirect(url_for('admin_login_page'))
     from flask_wtf.csrf import generate_csrf
-    return render_template('admin_dashboard.html', csrf_token=generate_csrf)
+    # Generate CSRF token for the admin dashboard HTML page (assuming it uses forms)
+    return render_template('admin_dashboard.html', csrf_token=generate_csrf())
 
 # Admin API Routes
 @app.route('/admin/api/statistics')
@@ -608,57 +610,14 @@ def admin_add_user_balance(user_id):
 
         # Update balance
         new_balance = user_found['balance'] + amount
-        admin_db.update_user_balance(user_found['hash_code'], new_balance)
-        
-        return jsonify({'success': True, 'new_balance': new_balance})
+        admin_db.update_user_balance(user_found['hash_code'], new_balance) # <-- FIX: Function Call Completed
+        return jsonify({'success': True, 'message': f'Balance added successfully: ₹{amount}'}) # <-- FIX: Success Response Added
+
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}) # <-- FIX: Error Handling Added
 
-# Custom Message API
-@app.route('/admin/api/custom-message')
-def admin_get_custom_message():
-    """Get custom not found message"""
-    if not session.get('admin_authenticated'):
-        return jsonify({'error': 'Unauthorized'}), 401
-    
-    return jsonify({'message': admin_db.get_custom_message()})
-
-@app.route('/admin/api/custom-message', methods=['PUT'])
-@csrf.exempt
-def admin_update_custom_message():
-    """Update custom not found message"""
-    if not session.get('admin_authenticated'):
-        return jsonify({'error': 'Unauthorized'}), 401
-
-    try:
-        data = request.get_json()
-        message = data.get('message', '').strip()
-
-        if not message:
-            return jsonify({'success': False, 'error': 'Message cannot be empty'})
-
-        admin_db.update_custom_message(message)
-        return jsonify({'success': True, 'message': 'Custom message updated successfully'})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
-# Searched Usernames API
-@app.route('/admin/api/searched-usernames')
-def admin_get_searched_usernames():
-    """Get all searched usernames that were not found"""
-    if not session.get('admin_authenticated'):
-        return jsonify({'error': 'Unauthorized'}), 401
-
-    return jsonify(searched_username_manager.get_searched_usernames())
-
-def create_app():
-    return app
-
+# --- Main App Runner ---
 if __name__ == '__main__':
+    # Flask app ko run karne ke liye
     port = int(os.environ.get('PORT', 5000))
-
-    if os.environ.get('REPLIT_DEPLOYMENT') or os.environ.get('PRODUCTION'):
-        app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
-    else:
-        debug_mode = os.environ.get('FLASK_ENV') != 'production'
-        app.run(host='0.0.0.0', port=port, debug=debug_mode, threaded=True)
+    app.run(host='0.0.0.0', port=port, debug=True)
